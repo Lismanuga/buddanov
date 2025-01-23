@@ -6,7 +6,7 @@ from functools import partial
 import re
 
 # Initialize Flask app
-app = Flask(name)
+app = Flask(__name__)
 
 # Replace these with your own values from environment variables or directly
 api_id = "24344346"
@@ -37,30 +37,25 @@ def format_message(message_text):
         return f'@AgentScarlettBot analyze {hash_value}'
     return message_text
 
-async def get_scarlett_response(client, chat_id, thread_id, timeout=30):
-    """Wait for and return Scarlett's response in the thread."""
-    # Add initial delay before checking for response
-    await asyncio.sleep(10)  # 10 second delay
-    
+async def get_scarlett_response(client, chat_id, thread_id, message_id, timeout=30):
+    """Wait for and return Scarlett's response to the specific message ID."""
+    await asyncio.sleep(10)  # Initial delay
     start_time = asyncio.get_event_loop().time()
     
     while (asyncio.get_event_loop().time() - start_time) < timeout:
-        # Get recent messages in the thread
         async for message in client.iter_messages(
             chat_id,
             reply_to=thread_id,
-            limit=5  # Check last 5 messages
+            limit=5
         ):
-            # Check if message is from Scarlett and newer than our request
+            # Check if message is from Scarlett, is a reply to our message, and newer than our request
             if (message.sender and 
                 hasattr(message.sender, 'username') and 
                 message.sender.username == 'AgentScarlettBot' and
+                message.reply_to_msg_id == message_id and
                 message.date.timestamp() > start_time):
                 return message.text
-        
-        # Wait a bit before checking again
         await asyncio.sleep(1)
-    
     return None
 
 @app.route('/send_message', methods=['POST'])
@@ -78,14 +73,16 @@ def send_message():
             formatted_message = format_message(message_text)
             
             async def send_and_get_response():
-                # Send message
-                await client.send_message(
+                # Send message and get the message ID
+                sent_message = await client.send_message(
                     CHAT_ID,
                     formatted_message,
                     reply_to=THREAD_ID
                 )
+                message_id = sent_message.id
+                
                 # Wait for Scarlett's response
-                response = await get_scarlett_response(client, CHAT_ID, THREAD_ID)
+                response = await get_scarlett_response(client, CHAT_ID, THREAD_ID, message_id)
                 return response
 
             # Run the coroutine in the event loop
@@ -111,7 +108,7 @@ def send_message():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-        async def main():
+async def main():
     await client.start(phone=phone_number)
     print("Client is running...")
     
@@ -122,7 +119,7 @@ def send_message():
     except Exception as e:
         print(f"Error accessing target chat: {e}")
 
-if name == "main":
+if __name__ == "__main__":
     # Start the Telegram client
     loop.run_until_complete(main())
 
